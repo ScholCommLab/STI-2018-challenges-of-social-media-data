@@ -59,8 +59,7 @@ for i in tqdm(batches, total=len(batches)):
             resolved_dois.loc[response['doi'],
                               'url'] = response['future'].result().url
             resolved_dois.loc[response['doi'],
-                              'status_code'] = response['future'].
-            result().status_code
+                              'status_code'] = response['future'].result().status_code
         except requests.exceptions.Timeout as ex:
             err_msg = str(ex)
             err = "Timeout"
