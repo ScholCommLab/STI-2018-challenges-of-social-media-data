@@ -58,17 +58,23 @@ if __name__ == "__main__":
         # create futures in parallel
         for target in batch:
             now = datetime.datetime.now()
+            f_err = None
+
             if not args['url']:
                 url = args['format'].format(target)
             else:
                 url = target
 
-            future = session.get(url, allow_redirects=True, timeout=timeout)
+            try:
+                future = session.get(url, allow_redirects=True, timeout=timeout)
+            except e:
+                f_err = str(e)
 
             futures.append({
                 "target": target,
                 "ts": str(now),
-                "future": future
+                "future": future,
+                "future_err": f_err
             })
 
         # collect future respones and populate df
@@ -79,21 +85,26 @@ if __name__ == "__main__":
 
             ix = response['target']
 
-            try:
-                resolved.loc[ix, 'resolved'] = response['future'].result().url
-                resolved.loc[ix, 'status_code'] = response['future'].result().status_code
-            except requests.exceptions.Timeout as ex:
-                err_msg = str(ex)
-                err = "Timeout"
-            except requests.exceptions.TooManyRedirects as ex:
-                err_msg = str(ex)
-                err = "TooManyRedirects"
-            except requests.exceptions.RequestException as ex:
-                err_msg = str(ex)
-                err = "RequestException"
+            if response['future_err']:
+                resolved.loc[ix, 'err_msg'] = "FutureError"
+                resolved.loc[ix, 'err_msg'] = response['future_error']
+                resolved.loc[ix, 'ts'] = response['ts']
+            else:
+                try:
+                    resolved.loc[ix, 'resolved'] = response['future'].result().url
+                    resolved.loc[ix, 'status_code'] = response['future'].result().status_code
+                except requests.exceptions.Timeout as ex:
+                    err_msg = str(ex)
+                    err = "Timeout"
+                except requests.exceptions.TooManyRedirects as ex:
+                    err_msg = str(ex)
+                    err = "TooManyRedirects"
+                except requests.exceptions.RequestException as ex:
+                    err_msg = str(ex)
+                    err = "RequestException"
 
-            resolved.loc[ix, 'err'] = err
-            resolved.loc[ix, 'err_msg'] = err_msg
-            resolved.loc[ix, 'ts'] = response['ts']
+                resolved.loc[ix, 'err'] = err
+                resolved.loc[ix, 'err_msg'] = err_msg
+                resolved.loc[ix, 'ts'] = response['ts']
 
     resolved.to_csv(args['input'].split(".csv")[0] + "_resolved.csv")
