@@ -1,17 +1,17 @@
+import argparse
 import configparser
-from ATB.ATB.Facebook import Facebook
-
 import datetime
+import json
+import sys
 from concurrent.futures import ProcessPoolExecutor
+from urllib.parse import quote
 
 import pandas as pd
 import requests
 from requests_futures.sessions import FuturesSession
 from tqdm import tqdm
-from urllib.parse import quote
-import json
-import argparse
-import sys
+
+from ATB.ATB.Facebook import Facebook
 
 # Facebook
 
@@ -109,7 +109,7 @@ if __name__ == "__main__":
         df['url2'] = df.doi.map(lambda x: "http://dx.doi.org/{}".format(x))
 
     # Create temp out
-    out_df = df[urls].copy()
+    out_df = df[urls+['doi']].copy()
 
     res_cols = []
     for i in range(1, len(urls)+1):
@@ -162,12 +162,11 @@ if __name__ == "__main__":
             for ix, col in enumerate(urls, 1):
                 resp = fb_query(row[col])
                 if resp[0]:
-                    out_df.loc[i, 'og_obj'+str(ix)] = json.dumps(resp[0])
+                    out_df.iloc[0, 'og_obj'+str(ix)] = json.dumps(resp[0])
                 if resp[1]:
-                    out_df.loc[i, 'og_eng'+str(ix)] = json.dumps(resp[1])
+                    out_df.iloc[0, 'og_eng'+str(ix)] = json.dumps(resp[1])
                 if resp[2]:
-                    out_df.loc[i, 'og_err'+str(ix)] = str(resp[2])
+                    out_df.iloc[0, 'og_err'+str(ix)] = str(resp[2])
                 out_df.loc[i, 'ts'] = str(now)
 
-        out_df.iloc[list(failed_ind)].to_csv(
-            outfile, index=False, header=False)
+            out_df.iloc[0].to_csv(outfile, index=False, header=False)
