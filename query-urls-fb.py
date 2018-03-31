@@ -8,12 +8,14 @@ import pandas as pd
 import requests
 from requests_futures.sessions import FuturesSession
 from tqdm import tqdm
-import urllib
+from urllib.parse import quote
 import json
 import argparse
-
+import sys
 
 # Facebook
+
+
 def fb_query(url):
     og_object = None
     og_engagement = None
@@ -42,7 +44,7 @@ def fb_queries(urls):
 
     try:
         responses = fb_graph.get_objects(
-            ids=urls,
+            ids=[url.strip() for url in urls],
             fields="engagement, og_object"
         )
     except:
@@ -86,8 +88,8 @@ if __name__ == "__main__":
     fb_graph = init_config("config.cnf")
 
     # Init dataset
-    df = pd.read_csv(args['input'], index_col="doi")
-    df = df[df.url.notnull()]
+    df = pd.read_csv(args['input'])
+    df = df[df.url.notnull()]  # Require a URL
 
     # Create alternative URLs
     print("All URLs are http or https: {}".format(
@@ -99,12 +101,12 @@ if __name__ == "__main__":
         df['url1'] = df.url
         df['url2'] = df.url.map(lambda x: x[:4] + x[5:]
                                 if x[4] == "s" else x[:4] + "s" + x[4:])
-        df['url3'] = df.index.map(lambda x: "https://doi.org/{}".format(x))
-        df['url4'] = df.index.map(lambda x: "http://dx.doi.org/{}".format(x))
+        df['url3'] = df.doi.map(lambda x: "https://doi.org/{}".format(x))
+        df['url4'] = df.doi.map(lambda x: "http://dx.doi.org/{}".format(x))
     else:
         urls = ['url1', 'url2']
-        df['url1'] = df.index.map(lambda x: "https://doi.org/{}".format(x))
-        df['url2'] = df.index.map(lambda x: "http://dx.doi.org/{}".format(x))
+        df['url1'] = df.doi.map(lambda x: "https://doi.org/{}".format(x))
+        df['url2'] = df.doi.map(lambda x: "http://dx.doi.org/{}".format(x))
 
     # Create temp out
     out_df = df[urls].copy()
@@ -120,47 +122,52 @@ if __name__ == "__main__":
         out_df[col] = None
 
     batchsize = args['parallel']
-    indices = list(out_df.index)
 
     failed_ind = set()
-    for i in tqdm(range(0, len(indices), batchsize), desc="Collecting in batches"):
-        curr_ind = indices[i:i+batchsize]
-        batch = out_df.loc[curr_ind]
+    start_inds = list(range(0, len(out_df), batchsize))
+    with open(args['input'].split(".csv")[0] + "_fb.csv", "w") as outfile:
+        out_df.iloc[[]].to_csv(outfile, index=False)
+        for i in tqdm(start_inds, desc="Collecting in batches"):
+            curr_ind = list(range(i, i+batchsize))
+            batch = out_df.iloc[curr_ind].copy()
 
-        now = datetime.datetime.now()
-
-        # Query and process fb_queries for original URL
-        for ix, col in enumerate(urls, 1):
+            # Query and process fb_queries for original URL
             try:
-                results = fb_queries(
-                    [x for x in batch[col].tolist() if pd.notnull(x)])
-            except:
+                for ix, col in enumerate(urls, 1):
+
+                    now = datetime.datetime.now()
+                    us = [x for x in batch[col].tolist() if pd.notnull(x)]
+                    results = fb_queries(us)
+
+                    for url, resp in results.items():
+                        if resp[0]:
+                            batch.loc[batch[col] == url,
+                                      'og_obj'+str(ix)] = json.dumps(resp[0])
+                        if resp[1]:
+                            batch.loc[batch[col] == url,
+                                      'og_eng'+str(ix)] = json.dumps(resp[1])
+                        if resp[2]:
+                            batch.loc[batch[col] == url,
+                                      'og_err'+str(ix)] = str(resp[2])
+                        batch.loc[batch[col] == url, 'ts'] = str(now)
+                batch.to_csv(outfile, index=False, header=False)
+            except Exception as e:
+                print(e)
                 for i in curr_ind:
                     failed_ind.add(i)
 
-            for url, resp in results.items():
+        # Individually re-query failed rows
+        rows = list(out_df.iloc[list(failed_ind)].iterrows())
+        for i, row in tqdm(rows, desc="Collecting failed rows"):
+            for ix, col in enumerate(urls, 1):
+                resp = fb_query(row[col])
                 if resp[0]:
-                    out_df.loc[out_df[col] == url,
-                               'og_obj'+str(ix)] = json.dumps(resp[0])
+                    out_df.loc[i, 'og_obj'+str(ix)] = json.dumps(resp[0])
                 if resp[1]:
-                    out_df.loc[out_df[col] == url,
-                               'og_eng'+str(ix)] = json.dumps(resp[1])
+                    out_df.loc[i, 'og_eng'+str(ix)] = json.dumps(resp[1])
                 if resp[2]:
-                    out_df.loc[out_df[col] == url,
-                               'og_err'+str(ix)] = str(resp[2])
-                out_df.loc[out_df[col] == url, 'ts'] = str(now)
+                    out_df.loc[i, 'og_err'+str(ix)] = str(resp[2])
+                out_df.loc[i, 'ts'] = str(now)
 
-    # Individually re-query failed rows
-    rows = list(out_df.loc[failed_ind].iterrows())
-    for i, row in tqdm(rows, desc="Collecting failed rows"):
-        for ix, col in enumerate(urls, 1):
-            resp = fb_query(row[col])
-            if resp[0]:
-                out_df.loc[i, 'og_obj'+str(ix)] = json.dumps(resp[0])
-            if resp[1]:
-                out_df.loc[i, 'og_eng'+str(ix)] = json.dumps(resp[1])
-            if resp[2]:
-                out_df.loc[i, 'og_err'+str(ix)] = str(resp[2])
-            out_df.loc[i, 'ts'] = str(now)
-
-    out_df.to_csv(args['input'].split(".csv")[0] + "_fb.csv")
+        out_df.iloc[list(failed_ind)].to_csv(
+            outfile, index=False, header=False)
