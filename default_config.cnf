@@ -1,6 +1,7 @@
 [facebook] 
 app_id: 
-app_secret:  
+app_secret:
+user_token:
  
 [altmetric] 
 key: 

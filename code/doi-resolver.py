@@ -35,7 +35,7 @@ if __name__ == "__main__":
     col = args['column']
 
     # Read input file
-    df = pd.read_csv(args['input'], )
+    df = pd.read_csv(args['input'])
     targets = df[col].tolist()
 
     resolved = pd.DataFrame({col: targets,

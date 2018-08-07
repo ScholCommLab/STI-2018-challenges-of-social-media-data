@@ -11,10 +11,9 @@ import requests
 from requests_futures.sessions import FuturesSession
 from tqdm import tqdm
 
-from ATB.ATB.Facebook import Facebook
+from facebook import GraphAPI, GraphAPIError
 
 # Facebook
-
 
 def fb_query(url):
     og_object = None
@@ -64,13 +63,89 @@ def fb_queries(urls):
     return results
 
 
-def init_config(config):
+def get_app_access(app_id, app_secret, version="2.10"):
+    """Exchange a short-lived user token for a long-lived one"""
+    payload = {'grant_type': 'client_credentials',
+               'client_id': app_id,
+               'client_secret': app_secret}
+
+    try:
+        response = requests.post(
+            'https://graph.facebook.com/oauth/access_token?', params=payload)
+    except requests.exceptions.RequestException:
+        raise Exception()
+
+    token = json.loads(response.text)
+    token['created'] = str(datetime.datetime.now())
+    return token
+
+
+def extend_user_access(user_token, app_id, app_secret, version="2.10"):
+    """Uses a short-lived user token to create a long lived one"""
+    payload = {'grant_type': 'fb_exchange_token',
+               'client_id': app_id,
+               'client_secret': app_secret,
+               'fb_exchange_token': user_token}
+
+    try:
+        response = requests.post(
+            'https://graph.facebook.com/oauth/access_token?', params=payload)
+    except requests.exceptions.RequestException:
+        raise Exception()
+
+    token = json.loads(response.text)
+    token['created'] = str(datetime.datetime.now())
+    return token
+
+
+def token_expiry(token):
+    remain = datetime.timedelta(seconds=token['expires_in'])
+    created = datetime.datetime.strptime(
+        token['created'], "%Y-%m-%d %H:%M:%S.%f")
+    print("Token expires {}\n{} left".format(str(created+remain), str(remain)))
+
+
+def expires_soon(token, tolerance=1):
+    remain = datetime.timedelta(seconds=token['expires_in'])
+    created = datetime.datetime.strptime(
+        token['created'], "%Y-%m-%d %H:%M:%S.%f")
+    now = datetime.datetime.now()
+
+    if (now - created+remain).days < tolerance:
+        return True
+    else:
+        return False
+
+
+def init_config(config_file):
+    # Load config
     Config = configparser.ConfigParser()
-    Config.read(config)
+    Config.read(config_file)
+
     FACEBOOK_APP_ID = Config.get('facebook', 'app_id')
     FACEBOOK_APP_SECRET = Config.get('facebook', 'app_secret')
+    FACEBOOK_USER_TOKEN = Config.get('facebook', 'user_token')
 
-    return Facebook(app_id=FACEBOOK_APP_ID, app_secret=FACEBOOK_APP_SECRET)
+    try:
+        with open("token.pkl", "rb") as pkl:
+            token = pickle.load(pkl)
+            print("Found pickled token")
+
+        if expires_soon(token):
+            token = extend_user_access(
+                FACEBOOK_USER_TOKEN, FACEBOOK_APP_ID, FACEBOOK_APP_SECRET)
+            print("Created new token, because of soon expiry")
+    except FileNotFoundError:
+        print("No token found. Creating new one...")
+        token = extend_user_access(
+            FACEBOOK_USER_TOKEN, FACEBOOK_APP_ID, FACEBOOK_APP_SECRET)
+
+    print("Saving token")
+    token_expiry(token)
+    with open("token.pkl", "wb") as pkl:
+        pickle.dump(token, pkl)
+
+    return GraphAPI(token['access_token'], version="2.10")
 
 
 if __name__ == "__main__":
