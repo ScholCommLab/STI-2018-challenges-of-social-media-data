@@ -66,7 +66,8 @@ if __name__ == "__main__":
                 url = target
 
             try:
-                future = session.get(url, allow_redirects=True, timeout=timeout)
+                future = session.get(
+                    url, allow_redirects=True, timeout=timeout)
             except e:
                 f_err = str(e)
 
@@ -91,8 +92,10 @@ if __name__ == "__main__":
                 resolved.loc[ix, 'ts'] = response['ts']
             else:
                 try:
-                    resolved.loc[ix, 'resolved'] = response['future'].result().url
-                    resolved.loc[ix, 'status_code'] = response['future'].result().status_code
+                    resolved.loc[ix,
+                                 'resolved'] = response['future'].result().url
+                    resolved.loc[ix, 'status_code'] = response['future'].result(
+                    ).status_code
                 except requests.exceptions.Timeout as ex:
                     err_msg = str(ex)
                     err = "Timeout"

@@ -15,6 +15,7 @@ from facebook import GraphAPI, GraphAPIError
 
 # Facebook
 
+
 def fb_query(url):
     og_object = None
     og_engagement = None
