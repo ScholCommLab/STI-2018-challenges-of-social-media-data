@@ -1,0 +1,5 @@
+tqdm==4.23.4
+facebook_sdk.egg==info
+requests_futures==0.9.7
+requests==2.18.4
+pandas==0.23.3
